@@ -12,7 +12,29 @@ message SumResponse {
   int32 sum = 1;
 }
 
-service SumService{
+message ComputeAverageRequest {
+  int32 arg = 1;
+}
+
+message ComputeAverageResponse {
+  double average = 1;
+}
+
+message FindMaximumRequest {
+  int32 arg = 1;
+}
+
+message FindMaximumResponse {
+  int32 max = 1;
+}
+
+service CalculatorService{
   // Unary
   rpc Sum(SumRequest) returns (SumResponse) {};
+
+  // Client Streaming
+  rpc ComputeAverage(stream ComputeAverageRequest) returns (ComputeAverageResponse) {};
+
+  // BiDi Streaming
+  rpc FindMaximum(stream FindMaximumRequest) returns (stream FindMaximumResponse) {};
 }

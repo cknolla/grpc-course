@@ -8,6 +8,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"io"
 	"log"
+	"time"
 )
 
 func main() {
@@ -25,7 +26,11 @@ func main() {
 
 	// doUnary(client)
 
-	doServerStreaming(client)
+	// doServerStreaming(client)
+
+	// doClientStreaming(client)
+
+	doBiDiStreaming(client)
 }
 
 func doUnary(client greetpb.GreetServiceClient) {
@@ -66,4 +71,115 @@ func doServerStreaming(client greetpb.GreetServiceClient) {
 		}
 		log.Println("Response from GreetManyTimes", msg.GetResult())
 	}
+}
+
+func doClientStreaming(client greetpb.GreetServiceClient) {
+	fmt.Println("starting to do a client streaming rpc...")
+	requests := []*greetpb.LongGreetRequest{
+		{
+			Greeting: &greetpb.Greeting{
+				FirstName: "Bob",
+				LastName:  "Loblaw",
+			},
+		},
+		{
+			Greeting: &greetpb.Greeting{
+				FirstName: "James",
+				LastName:  "Bond",
+			},
+		},
+		{
+			Greeting: &greetpb.Greeting{
+				FirstName: "Margaret",
+				LastName:  "Thatcher",
+			},
+		},
+	}
+	stream, err := client.LongGreet(context.Background())
+	if err != nil {
+		log.Panicln("error while calling LongGreet", err)
+	}
+
+	// iterate over req slice and send each message
+	for _, req := range requests {
+		err := stream.Send(req)
+		if err != nil {
+			log.Panicln("error sending client stream", err)
+		}
+	}
+
+	res, err := stream.CloseAndRecv()
+	if err != nil {
+		log.Panicln("error receiving server response from LongGreet", err)
+	}
+	log.Println("LongGreet response", res.GetResult())
+}
+
+func doBiDiStreaming(client greetpb.GreetServiceClient) {
+	fmt.Println("starting bidi streaming rpc...")
+	requests := []*greetpb.GreetEveryoneRequest{
+		{
+			Greeting: &greetpb.Greeting{
+				FirstName: "Bob",
+				LastName:  "Loblaw",
+			},
+		},
+		{
+			Greeting: &greetpb.Greeting{
+				FirstName: "James",
+				LastName:  "Bond",
+			},
+		},
+		{
+			Greeting: &greetpb.Greeting{
+				FirstName: "Margaret",
+				LastName:  "Thatcher",
+			},
+		},
+	}
+	// create a stream by invoking client
+	stream, err := client.GreetEveryone(context.Background())
+	if err != nil {
+		log.Panicln("error while creating stream", err)
+		return
+	}
+	done := make(chan struct{})
+	// send a bunch of messages
+	go func() {
+		for _, req := range requests {
+			log.Println("sending message", req)
+			err := stream.Send(req)
+			if err == io.EOF {
+				close(done)
+			}
+			if err != nil {
+				log.Panicln("error sending request", err)
+				return
+			}
+			time.Sleep(250 * time.Millisecond)
+		}
+		err = stream.CloseSend()
+		if err != nil {
+			log.Panicln("error closing client stream", err)
+			return
+		}
+	}()
+
+	// receive a bunch of messages
+	go func() {
+		for {
+			res, err := stream.Recv()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				log.Panicln("error while receiving request", err)
+				return
+			}
+			fmt.Println("received", res.Result)
+		}
+		close(done)
+	}()
+
+	<-done
 }
