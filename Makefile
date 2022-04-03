@@ -6,3 +6,6 @@ genCalc:
 
 genPrime:
 	protoc prime/primepb/prime.proto --go_out=plugins=grpc:.
+
+genBlog:
+	protoc blog/pb/blog.proto --go_out=plugins=grpc:.
