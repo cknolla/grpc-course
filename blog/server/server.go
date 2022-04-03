@@ -12,6 +12,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/reflection"
 	"google.golang.org/grpc/status"
 	"log"
 	"net"
@@ -60,27 +61,27 @@ func (*server) CreateBlog(ctx context.Context, req *pb.CreateBlogRequest) (*pb.C
 }
 
 // findById fetches a single blog item by object id.
-func findById(objectId primitive.ObjectID) (*blogItem, error) {
+func findById(id string) (*blogItem, primitive.ObjectID, error) {
+	objectId, err := primitive.ObjectIDFromHex(id)
+	if err != nil {
+		return nil, [12]byte{}, status.Error(codes.InvalidArgument, err.Error())
+	}
 	data := &blogItem{}
 	filter := bson.M{"_id": objectId}
 	log.Println("getting blog with id", objectId)
 	res := collection.FindOne(context.Background(), filter)
 	if err := res.Decode(data); err != nil {
-		return nil, status.Errorf(
+		return nil, [12]byte{}, status.Errorf(
 			codes.NotFound,
 			"cannot find blog with id",
 			objectId,
 		)
 	}
-	return data, nil
+	return data, objectId, nil
 }
 
 func (*server) ReadBlog(ctx context.Context, req *pb.ReadBlogRequest) (*pb.ReadBlogResponse, error) {
-	objectId, err := primitive.ObjectIDFromHex(req.GetId())
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-	data, err := findById(objectId)
+	data, _, err := findById(req.GetId())
 	if err != nil {
 		return nil, err
 	}
@@ -96,11 +97,7 @@ func (*server) ReadBlog(ctx context.Context, req *pb.ReadBlogRequest) (*pb.ReadB
 
 func (*server) UpdateBlog(ctx context.Context, req *pb.UpdateBlogRequest) (*pb.UpdateBlogResponse, error) {
 	blog := req.GetBlog()
-	objectId, err := primitive.ObjectIDFromHex(blog.GetId())
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-	data, err := findById(objectId)
+	data, objectId, err := findById(blog.GetId())
 	if err != nil {
 		return nil, err
 	}
@@ -122,6 +119,97 @@ func (*server) UpdateBlog(ctx context.Context, req *pb.UpdateBlogRequest) (*pb.U
 			Title:    data.Title,
 		},
 	}, nil
+}
+
+func (*server) DeleteBlog(ctx context.Context, req *pb.DeleteBlogRequest) (*pb.DeleteBlogResponse, error) {
+	id := req.GetId()
+	_, objectId, err := findById(id)
+	if err != nil {
+		return nil, err
+	}
+	log.Println("deleting blog with id", objectId)
+	res, err := collection.DeleteOne(context.Background(), bson.M{"_id": objectId})
+	if err != nil {
+		return nil, status.Errorf(
+			codes.Internal,
+			"cannot delete object in mongo: %v", err)
+	}
+	if res.DeletedCount == 0 {
+		return nil, status.Errorf(
+			codes.NotFound,
+			"cannot find blog to delete: %v",
+			id,
+		)
+	}
+	return &pb.DeleteBlogResponse{
+		Id: id,
+	}, nil
+}
+
+func (*server) ListBlogs(req *pb.ListBlogsRequest, stream pb.BlogService_ListBlogsServer) error {
+	count := req.GetCount()
+	if count == 0 {
+		// default value if empty
+		count = 10
+	}
+	log.Println("listing up to", count, "blogs")
+	findOptions := options.Find()
+	findOptions.SetLimit(int64(count))
+	cursor, err := collection.Find(context.Background(), bson.D{}, findOptions)
+	defer cursor.Close(context.Background())
+	if err != nil {
+		return status.Errorf(
+			codes.Internal,
+			"error searching for blogs: %v",
+			err,
+		)
+	}
+	data := &blogItem{}
+	for cursor.Next(context.Background()) {
+		err = cursor.Decode(data)
+		if err != nil {
+			return status.Errorf(
+				codes.Internal,
+				"error decoding blog item: %v",
+				err,
+			)
+		}
+		err = stream.Send(&pb.ListBlogsResponse{
+			Blog: &pb.Blog{
+				Id:       data.ID.Hex(),
+				AuthorId: data.AuthorId,
+				Title:    data.Title,
+				Content:  data.Content,
+			},
+		})
+		if err != nil {
+			return status.Errorf(
+				codes.Internal,
+				"error sending data to client: %v",
+				err,
+			)
+		}
+	}
+	if err := cursor.Err(); err != nil {
+		return status.Errorf(
+			codes.Internal,
+			"Unknown cursor error: %v",
+			err,
+		)
+	}
+	return nil
+	// var items []*blogItem
+	// err = cursor.All(context.Background(), items)
+	// if err != nil {
+	// 	return status.Errorf(
+	// 		codes.Internal,
+	// 		"error retrieving blogs: %v",
+	// 		err,
+	// 	)
+	// }
+	// for _, item := range items {
+	//
+	// }
 }
 
 func main() {
@@ -183,6 +271,7 @@ func main() {
 	// 	s.Stop()
 	// }()
 	pb.RegisterBlogServiceServer(s, &server{})
+	reflection.Register(s)
 
 	go func() {
 		log.Println("starting server and listening for requests")

@@ -6,6 +6,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
+	"io"
 	"log"
 	"path/filepath"
 )
@@ -77,4 +78,32 @@ func main() {
 	}
 	log.Println("blog was updated", updateRes.GetBlog())
 
+	// delete blog
+	deleteId := response.GetBlog().GetId()
+	log.Println("deleting blog", deleteId)
+	deleteRes, err := client.DeleteBlog(context.Background(), &pb.DeleteBlogRequest{
+		Id: deleteId,
+	})
+	if err != nil {
+		log.Println("error deleting blog", err)
+	}
+	log.Println("blog was deleted", deleteRes.GetId())
+
+	// list blogs
+	log.Println("listing blogs")
+	resStream, err := client.ListBlogs(context.Background(), &pb.ListBlogsRequest{})
+	if err != nil {
+		log.Println("err listing blogs", err)
+	}
+	for {
+		msg, err := resStream.Recv()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			log.Println("error reading stream", err)
+			break
+		}
+		log.Println(msg.GetBlog())
+	}
 }
