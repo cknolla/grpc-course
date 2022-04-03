@@ -19,4 +19,12 @@
 # Environment files
 .env
 
+# SSL files
+*.crt
+*.key
+*.csr
+*.pem
+
 # Project specific
+
+!.gitkeep

@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"go-grpc-course-interactive/calculator/calculatorpb"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 	"io"
 	"log"
 	"time"
@@ -28,7 +30,9 @@ func main() {
 
 	// doComputeAverage(client)
 
-	doFindMaximum(client)
+	// doFindMaximum(client)
+
+	doErrorUnary(client)
 }
 
 func doSum(client calculatorpb.CalculatorServiceClient) {
@@ -124,4 +128,29 @@ func doFindMaximum(client calculatorpb.CalculatorServiceClient) {
 	}()
 
 	<-done
+}
+
+func doErrorUnary(client calculatorpb.CalculatorServiceClient) {
+	fmt.Println("starting square root rpc...")
+	number := int32(-4)
+	res, err := client.SquareRoot(context.Background(), &calculatorpb.SquareRootRequest{
+		Number: number,
+	})
+	if err != nil {
+		respError, ok := status.FromError(err)
+		if ok {
+			// grpc error
+			log.Println(respError.Code(), respError.Message())
+			if respError.Code() == codes.InvalidArgument {
+				log.Println("Sent a bad argument", respError.Message())
+				return
+			}
+		} else {
+			log.Panicln("error calling SquareRoot", err)
+		}
+
+		return
+	}
+	log.Println("Sqrt of", number, "is", res.GetSqrt())
+
 }

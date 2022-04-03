@@ -4,9 +4,14 @@ import (
 	"context"
 	"fmt"
 	"go-grpc-course-interactive/greet/greetpb"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 	"io"
 	"log"
 	"net"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -88,6 +93,24 @@ func (*server) GreetEveryone(stream greetpb.GreetService_GreetEveryoneServer) er
 	}
 }
 
+func (*server) GreetWithDeadline(ctx context.Context, req *greetpb.GreetWithDeadlineRequest) (*greetpb.GreetWithDeadlineResponse, error) {
+	fmt.Println("GreetWithDeadline function was invoked with", req)
+	for i := 0; i < 3; i++ {
+		if ctx.Err() == context.Canceled {
+			fmt.Println("client canceled request")
+			return nil, status.Error(codes.DeadlineExceeded, "client canceled request")
+		}
+		time.Sleep(1 * time.Second)
+	}
+	// fetch data from the passed-in greet request
+	firstName := req.GetGreeting().GetFirstName()
+	result := "Hello " + firstName
+	res := &greetpb.GreetWithDeadlineResponse{
+		Result: result,
+	}
+	return res, nil
+}
+
 func main() {
 	fmt.Println("Hello world.")
 
@@ -95,8 +118,19 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to listen: %v", err)
 	}
+	tls := false
+	creds := insecure.NewCredentials()
+	if tls {
+		creds, err = credentials.NewServerTLSFromFile(
+			filepath.Join("ssl", "server.crt"),
+			filepath.Join("ssl", "server.pem"),
+		)
+		if err != nil {
+			log.Panicln("error loading credentials", err)
+		}
+	}
 
-	s := grpc.NewServer()
+	s := grpc.NewServer(grpc.Creds(creds))
 	greetpb.RegisterGreetServiceServer(s, &server{})
 
 	if err := s.Serve(lis); err != nil {
