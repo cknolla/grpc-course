@@ -1,0 +1,13 @@
+version: "3.9"
+
+services:
+  mongo:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    restart: on-failure
+    volumes:
+      - mongo-volume:/data/db
+
+volumes:
+  mongo-volume:

@@ -44,6 +44,7 @@ message DeleteBlogResponse {
 
 message ListBlogsRequest {
   uint64 count = 1;
+  uint64 skip = 2;
 }
 
 message ListBlogsResponse {

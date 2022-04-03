@@ -152,9 +152,11 @@ func (*server) ListBlogs(req *pb.ListBlogsRequest, stream pb.BlogService_ListBlo
 		// default value if empty
 		count = 10
 	}
+	skip := req.GetSkip()
 	log.Println("listing up to", count, "blogs")
 	findOptions := options.Find()
 	findOptions.SetLimit(int64(count))
+	findOptions.SetSkip(int64(skip))
 	cursor, err := collection.Find(context.Background(), bson.D{}, findOptions)
 	defer cursor.Close(context.Background())
 	if err != nil {
@@ -164,8 +166,8 @@ func (*server) ListBlogs(req *pb.ListBlogsRequest, stream pb.BlogService_ListBlo
 			err,
 		)
 	}
-	data := &blogItem{}
 	for cursor.Next(context.Background()) {
+		data := &blogItem{}
 		err = cursor.Decode(data)
 		if err != nil {
 			return status.Errorf(
